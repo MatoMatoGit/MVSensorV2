@@ -20,17 +20,18 @@
 
 static void NotificationTimerRun(uint32_t t_ms);
 static void NotificationTimerCallback(SoftTimer_t timer);
-static NotificationMapping_t *INotificationMappingFromMoistureValue(uint32_t value);
+static NotificationMapping_t *INotificationMappingFromMoistureLevel(MoistureLevel_e level);
 static const char *INotificationColorToString(RgbLedColor_t color);
 
-static volatile NotificationState_t CurrentState;
+static volatile NotificationState_e CurrentState;
 static SoftTimer_t NotificationTimer;
 static volatile NotificationSleepCallback_t SleepCallback = NULL;
 static volatile uint8_t TimerFlag = 0;
+static NotificationMapping_t *NotificationMapping = NULL;
 
 void NotificationInit(NotificationSleepCallback_t sleep_cb)
 {
-	CurrentState = NOTIFICATION_STATE_COLOR_CYCLE;
+	CurrentState = NOTIFICATION_STATE_AWAIT_INPUT;
 
 	RgbLedModeSet(RGB_LED_MODE_OFF);
 	NotificationTimer = SoftTimerCreate(NOTIFICATION_STATE_TRANSITION_INTERVAL_MS, NotificationTimerCallback);
@@ -38,132 +39,64 @@ void NotificationInit(NotificationSleepCallback_t sleep_cb)
 	TimerFlag = 1;
 }
 
-NotificationState_t NotificationRun(uint32_t moisture_value)
+NotificationState_e NotificationRun(int16_t moisture_value, NotificationMapping_t *mapping)
 {
-	if(TimerFlag == 0) {
+	if(TimerFlag == 0 ||  moisture_value < 0 || mapping == NULL) {
 		return CurrentState;
 	}
 	
-#if NOTIFICATION_CONFIG_ENABLE_CALIBRATION==1
-	static uint32_t cal_time_start = 0;
-#endif
-
 	static uint8_t notification_idx = 0;
-	static NotificationMapping_t *notification_mapping = NULL;
+	static NotificationMapping_t *active_notification = NULL;
+	
+	NotificationMapping = mapping;
 	
 	switch(CurrentState) {
-	case NOTIFICATION_STATE_COLOR_CYCLE: {
-			RgbLedModeSet(RGB_LED_MODE_ON);
-			for(notification_idx = 0; notification_idx < NOTIFICATION_COLOR_TABLE_SIZE; notification_idx++) {
-				RgbLedColorSet(NotificationTable[notification_idx].color);
-				_delay_ms(500);
-			}
-			RgbLedModeSet(RGB_LED_MODE_OFF);
-#if NOTIFICATION_CONFIG_ENABLE_CALIBRATION==1
-		CurrentState = NOTIFICATION_STATE_DETECT_SOIL;
-#else
-		CurrentState = NOTIFICATION_STATE_MEASURE;
-#endif
-		break;
-	}
-#if NOTIFICATION_CONFIG_ENABLE_CALIBRATION==1
-	case NOTIFICATION_STATE_DETECT_SOIL: {
-		/* Set the LED color to red and turn it on. */
-		RgbLedColorSet(RGB_LED_COLOR_RED);
-		RgbLedModeSet(RGB_LED_MODE_ON);
-		
-		/* Verify that the sensor value is above 
-		 * the minimum value, indicating that the senor has 
-		 * inserted in the soil. Only then transition to the
-		 * calibration state. */
-		if(moisture_value >= SENSOR_MIN_VALUE) {
-			CurrentState = NOTIFICATION_STATE_MEASURE;
-		}
-		break;
-	}
-	case NOTIFICATION_STATE_CALIBRATE: {
-		/* If the calibration start time is 0 the calibration cycle
-		 * has been initiated. Set the calibration start time
-		 * and turn off the LED. The timer is set to the calibration
-		 * interval. */
-		if(cal_time_start == 0) {
-			cal_time_start = SoftTimerTotalTimeGet();
-			notification_idx = 0;
-			RgbLedModeSet(RGB_LED_MODE_OFF);
-			NotificationTimerRun(NOTIFICATION_CALIBRATION_INTERVAL_MS);
-		
-		/* If the total calibration time has been reached set the next state to notify and
-		 * change the timer interval. */
-		} else if(SoftTimerTotalTimeGet() >= (cal_time_start + CALIBRATION_PERIOD_S)) {
-			CurrentState = NOTIFICATION_STATE_MEASURE;
-		}
-		
-		/* Set the next color for the LED and turn it on. */
-		RgbLedColorSet(NotificationTable[notification_idx].color);
-		RgbLedModeSet(RGB_LED_MODE_ON);
-		
-		/* Check if the sensor value is at least the minimum value.
-		 * Adjust the 'perfect' moisture value. */
-		if(moisture_value >= SENSOR_MIN_VALUE) {
-			NotificationTable[MOISTURE_LEVEL_PERFECT].value = moisture_value;
-		}
-		
-		/* Turn off the LED. */
-		RgbLedModeSet(RGB_LED_MODE_OFF);
-		
-		/* Select the next LED color. */
-		notification_idx++;
-		if(notification_idx >= NOTIFICATION_COLOR_TABLE_SIZE) {
-			notification_idx = 0;
-		}
-		break;
-	}
-#endif
-	case NOTIFICATION_STATE_MEASURE: {
-		CurrentState = NOTIFICATION_STATE_NOTIFY_ON;
-		break;
-	}
-	case NOTIFICATION_STATE_NOTIFY_ON: {
+	
+	case NOTIFICATION_STATE_AWAIT_INPUT:
 		//softSerialPrintInt(moisture_value);
 		//softSerialPrint(", ");
 		
-		/* Map the sensor value to
-		 * a color and timing. */
-		notification_mapping = INotificationMappingFromMoistureValue(moisture_value);
-		
-		//softSerialPrintInt(notification_mapping->color);
-		//softSerialPrint(", ");
-		//softSerialPrint(INotificationColorToString(notification_mapping->color));
-		//softSerialPrintLn("");
-		
+		if(moisture_value > 0) {
+			/* Map the sensor value to
+			 * a color and timing. */
+			active_notification = INotificationMappingFromMoistureLevel(moisture_value);
+			CurrentState = NOTIFICATION_STATE_BUSY;
+					
+			//softSerialPrintInt(active_notification->color);
+			//softSerialPrint(", ");
+			//softSerialPrint(INotificationColorToString(active_notification->color));
+			//softSerialPrintLn("");
+		}
+		break;
+
+	case NOTIFICATION_STATE_BUSY: {
+	
 		/* Turn on the LED. */
-		RgbLedColorSet(notification_mapping->color);
-		RgbLedModeSet(RGB_LED_MODE_ON);
-		
+		RgbLedColorSet(active_notification->color);
+		RgbLedModeSet(active_notification->modes[notification_idx]);
+
 		/* Set the timer to the notification time and transition to the 'Notify off' state. */
-		NotificationTimerRun(notification_mapping->time_notify);
-		CurrentState = NOTIFICATION_STATE_NOTIFY_OFF;
+		NotificationTimerRun(active_notification->intervals[notification_idx]);
+		
+		notification_idx++;
+		if(notification_idx > active_notification->length) {
+			CurrentState = NOTIFICATION_STATE_DONE;
+		}
 		break;
 	}
-	case NOTIFICATION_STATE_NOTIFY_OFF: {
+	case NOTIFICATION_STATE_DONE: {
 		/* Turn off the LED. */
 		RgbLedModeSet(RGB_LED_MODE_OFF);
 	
 		if(SleepCallback != NULL) {
-			SleepCallback(notification_mapping->time_sleep);
+			SleepCallback(0);
 		}
-		CurrentState = NOTIFICATION_STATE_SLEEP;
-		break;
-	}
-	case NOTIFICATION_STATE_SLEEP: {
-		//softSerialPrintLn("awake");
-		
-		CurrentState = NOTIFICATION_STATE_MEASURE;
+		CurrentState = NOTIFICATION_STATE_AWAIT_INPUT;
 		break;
 	}
 	
 	default: {
-		CurrentState = NOTIFICATION_STATE_MEASURE;
+		CurrentState = NOTIFICATION_STATE_AWAIT_INPUT;
 		break;
 	}
 	}
@@ -185,18 +118,18 @@ static void NotificationTimerCallback(SoftTimer_t timer)
 	TimerFlag = 1;
 }
 
-static NotificationMapping_t *INotificationMappingFromMoistureValue(uint32_t value)
+static NotificationMapping_t *INotificationMappingFromMoistureLevel(MoistureLevel_e level)
 {
 	uint8_t i = 0;
 	uint8_t idx = 0;
 	
 	for(; i < NOTIFICATION_COLOR_TABLE_SIZE; i++) {
-		if(NotificationTable[i].value <= value) {
+		if(NotificationMapping[i].level <= level) {
 			idx = i;
 		}
 	}
 	
-	return &NotificationTable[idx];
+	return &NotificationMapping[idx];
 }
 
 static const char *INotificationColorToString(RgbLedColor_t color)

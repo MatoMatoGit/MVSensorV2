@@ -13,11 +13,12 @@ typedef struct {
 }ExtIntDesc_t;
 
 
-static ExtIntDesc_t ExtInts[NUM_EXT_INTS];
-static ExtIntDesc_t *ActiveInt = NULL;
+static volatile ExtIntDesc_t ExtInts[NUM_EXT_INTS];
+static volatile ExtIntDesc_t *ActiveInt = NULL;
 
 
 static ExtIntDesc_t *IExtInt(void);
+static void IExtIntFree(ExtIntDesc_t *ext_int);
 static void IExtIntInit(ExtIntDesc_t *ext_int);
 static void ISenseControlInit(ExtIntType_t type);
 
@@ -48,6 +49,17 @@ ExtInt_t ExtIntRegister(uint8_t pin, volatile uint8_t *port, ExtIntType_t type, 
     return (ExtInt_t)ext_int;
 }
 
+void ExtIntUnregister(ExtInt_t ext_int)
+{
+	ExtIntDisable();
+	IExtIntFree((ExtIntDesc_t *)ext_int);
+}
+
+ExtIntType_t ExtIntType(ExtInt_t ext_int)
+{
+	return ((ExtIntDesc_t *)ext_int)->type;
+}
+
 int ExtIntEnable(ExtInt_t ext_int)
 {
     if(ActiveInt == NULL) {
@@ -60,14 +72,13 @@ int ExtIntEnable(ExtInt_t ext_int)
 
 void ExtIntDisable(void)
 {
-    if(ActiveInt == NULL) {
-        return;
-    }
-
     cli();
-    PCMSK |= (1 << ActiveInt->pin);
-    GIMSK |= (1 << PCIE);
-    ActiveInt = NULL;
+    PCMSK = 0;
+    GIMSK &= ~(1 << PCIE);
+	GIMSK &= ~(1 << INT0);
+    if(ActiveInt != NULL) {
+		ActiveInt = NULL;
+    }
     sei();
 }
 
@@ -82,6 +93,17 @@ static ExtIntDesc_t *IExtInt(void)
     return NULL;
 }
 
+
+static void IExtIntFree(ExtIntDesc_t *ext_int)
+{
+	if(ext_int == NULL) {
+		return;
+	}
+	
+	ext_int->port = NULL;
+	ext_int->cb = NULL;
+}
+
 static void IExtIntInit(ExtIntDesc_t *ext_int)
 {
     cli();
@@ -90,9 +112,16 @@ static void IExtIntInit(ExtIntDesc_t *ext_int)
      * Pin Change Interrupt Flag. */
     GIFR &= ~(1 << INTF0);
     GIFR &= ~(1 << PCIF);
-
+	//if(ActiveInt != NULL) {
+	//	PCMSK &= ~(1 << ActiveInt->pin);
+	//}
+	//GIMSK &= ~(1 << PCIE);
+	//GIMSK &= ~(1 << INT0);
+	
     switch(ext_int->type) {
     case EXT_INT_PIN_CHANGE:
+		 ISenseControlInit(ext_int->type);
+		
         /* Set the bit in the Pin Change Mask Register
          * corresponding to the pin. */
         PCMSK |= (1 << ext_int->pin);
@@ -105,7 +134,8 @@ static void IExtIntInit(ExtIntDesc_t *ext_int)
     case EXT_INT_PIN_FALLING:
     case EXT_INT_PIN_RISING:
         ISenseControlInit(ext_int->type);
-
+		PCMSK |= (1 << ext_int->pin);
+		GIMSK |= (1 << PCIE);
         /* Enable External Interrupt Requests 0. */
         GIMSK |= (1 << INT0);
         break;
@@ -136,7 +166,12 @@ static void ISenseControlInit(ExtIntType_t type)
         MCUCR |= (1 << ISC01);
         break;
 
-    /* Handles EXT_INT_PIN_CHANGE and invalid types. */
+	case EXT_INT_PIN_CHANGE:
+	    /* Set ISC0-1 and ISC1-0. */
+	    MCUCR |= (1 << ISC00);
+	    MCUCR &= ~(1 << ISC01);
+	    break;
+
     default:
         break;
     }
@@ -145,9 +180,9 @@ static void ISenseControlInit(ExtIntType_t type)
 ISR(PCINT0_vect)
 {
     volatile uint8_t state = 0;
-
+	
     if(ActiveInt != NULL) {
-        state = *ActiveInt->port & (1 << ActiveInt->pin);
+        //state = *(ActiveInt->port) & (1 << ActiveInt->pin);
         ActiveInt->cb(state);
     }
 

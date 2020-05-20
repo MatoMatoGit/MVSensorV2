@@ -25,6 +25,11 @@ void ExtIntDeinit(void);
 
 ExtInt_t ExtIntRegister(uint8_t pin, volatile uint8_t *port, ExtIntType_t type, ExtIntCallback_t cb);
 
+void ExtIntUnregister(ExtInt_t ext_int);
+
+
+ExtIntType_t ExtIntType(ExtInt_t ext_int);
+
 int ExtIntEnable(ExtInt_t ext_int);
 
 void ExtIntDisable(void);

@@ -10,8 +10,15 @@
 #define GPIO_MOISTURE_H_
 
 #include <stdint.h>
+#include <avr/io.h>
+
+#define MOISTURE_DDR	DDRB
+#define MOISTURE_PORT	PORTB
+#define MOISTURE_EN_PIN	PINB3
+#define MOISTURE_OUT_PIN	PINB4
 
 void GpioMoistureInit(void);
+void GpioMoistureDeinit(void);
 
 void GpioMoisturePowerStateSet(uint8_t state);
 

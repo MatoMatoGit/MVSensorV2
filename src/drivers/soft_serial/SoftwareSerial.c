@@ -184,7 +184,6 @@ const int XMIT_START_ADJUSTMENT = 5;
 inline void tunedDelay(uint16_t delay) {
   uint8_t tmp = 0;
 
-  #if 0
   asm volatile("sbiw    %0, 0x01 \n\t"
                "ldi %1, 0xFF \n\t"
                "cpi %A0, 0xFF \n\t"
@@ -193,7 +192,6 @@ inline void tunedDelay(uint16_t delay) {
                : "+w" (delay), "+a" (tmp)
                : "0" (delay)
                );
-#endif
 }
 
 #if 0

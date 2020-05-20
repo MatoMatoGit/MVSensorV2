@@ -10,6 +10,7 @@
 
 #include <avr/sleep.h>
 #include <avr/power.h>
+#include <avr/interrupt.h>
 #include <stdlib.h>
 
 #define WDT_CYCLE_TO_SEC_MAP_SIZE 4
@@ -47,22 +48,28 @@ void SleepForDuration(uint32_t duration_s)
 		/* Get the sleep time and WDT cycles from the total sleep duration.
 		 * Enable the WDT to timeout after that many cycles.  */
 		WdtEnable(WdtCyclesFromSec(duration_s, &sleep_s), WdtTimeoutCallback);
-		
+			
 		/* Set sleep mode and enable sleep. 
 		 * Disables power of peripherals. */
-		set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+		set_sleep_mode( SLEEP_MODE_IDLE); //SLEEP_MODE_PWR_DOWN
 		sleep_enable();
+		
+		sei();
 		
 		/* Go to sleep. */
 		sleep_mode();
 		
 		/* Resumed here when woken. */
 		
+		cli();
+		
 		/* Disable sleep mode. */
 		sleep_disable();
 
 		/* Enable power to peripherals. */
 		power_all_enable();
+		
+		sei();
 		
 		/* Check if the MCU was woken by the WDT. */
 		if(wdt_flag) {

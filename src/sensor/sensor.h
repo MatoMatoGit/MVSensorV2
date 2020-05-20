@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-#define SENSOR_FILTER_DEPTH		25
+#define SENSOR_FILTER_DEPTH		5
 #define SENSOR_READ_INTERVAL_MS 1000
 #define SENSOR_ENABLE_PERIODIC_READ 0
 
