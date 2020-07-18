@@ -1,8 +1,5 @@
 #include "notification.h"
-#include "notification_table.h"
-
-/* App. */
-#include "sensor.h"
+#include "notification_mapping.h"
 
 /* Drivers. */
 #include "rgb_led.h"
@@ -14,6 +11,7 @@
 
 /* System libs. */
 #include <util/delay.h>
+#include <avr/pgmspace.h>
 
 /* Standard libs. */
 #include <stdint.h>
@@ -25,23 +23,22 @@ static const char *INotificationColorToString(RgbLedColor_t color);
 
 static volatile NotificationState_e CurrentState;
 static SoftTimer_t NotificationTimer;
-static volatile NotificationSleepCallback_t SleepCallback = NULL;
 static volatile uint8_t TimerFlag = 0;
 static NotificationMapping_t *NotificationMapping = NULL;
+static uint8_t NotificationTableSize = 0;
 
-void NotificationInit(NotificationSleepCallback_t sleep_cb)
+void NotificationInit(void)
 {
 	CurrentState = NOTIFICATION_STATE_AWAIT_INPUT;
 
 	RgbLedModeSet(RGB_LED_MODE_OFF);
 	NotificationTimer = SoftTimerCreate(NOTIFICATION_STATE_TRANSITION_INTERVAL_MS, NotificationTimerCallback);
-	SleepCallback = sleep_cb;
 	TimerFlag = 1;
 }
 
-NotificationState_e NotificationRun(int16_t moisture_value, NotificationMapping_t *mapping)
+NotificationState_e NotificationRun(MoistureLevel_e moisture_level, NotificationMapping_t *mapping, uint8_t table_size)
 {
-	if(TimerFlag == 0 ||  moisture_value < 0 || mapping == NULL) {
+	if(TimerFlag == 0 || mapping == NULL) {
 		return CurrentState;
 	}
 	
@@ -49,6 +46,10 @@ NotificationState_e NotificationRun(int16_t moisture_value, NotificationMapping_
 	static NotificationMapping_t *active_notification = NULL;
 	
 	NotificationMapping = mapping;
+	NotificationTableSize = table_size;
+	
+	softSerialPrintInt(CurrentState);
+	softSerialPrintLn("");
 	
 	switch(CurrentState) {
 	
@@ -56,17 +57,22 @@ NotificationState_e NotificationRun(int16_t moisture_value, NotificationMapping_
 		//softSerialPrintInt(moisture_value);
 		//softSerialPrint(", ");
 		
-		if(moisture_value > 0) {
-			/* Map the sensor value to
-			 * a color and timing. */
-			active_notification = INotificationMappingFromMoistureLevel(moisture_value);
-			CurrentState = NOTIFICATION_STATE_BUSY;
-					
-			//softSerialPrintInt(active_notification->color);
-			//softSerialPrint(", ");
-			//softSerialPrint(INotificationColorToString(active_notification->color));
-			//softSerialPrintLn("");
+		/* Map the sensor value to a color sequence. */
+		active_notification = INotificationMappingFromMoistureLevel(moisture_level);
+		if(active_notification == NULL) {
+			softSerialPrintLn("No mapping found");
+			CurrentState = NOTIFICATION_STATE_DONE;
+			return NOTIFICATION_STATE_DONE;
+		} else {
+			CurrentState = NOTIFICATION_STATE_BUSY;	
 		}
+		
+		NotificationTimerRun(active_notification->intervals[notification_idx]);
+					
+		softSerialPrintInt(active_notification->color);
+		softSerialPrint(", ");
+		softSerialPrint(INotificationColorToString(active_notification->color));
+		softSerialPrintLn("");
 		break;
 
 	case NOTIFICATION_STATE_BUSY: {
@@ -74,24 +80,22 @@ NotificationState_e NotificationRun(int16_t moisture_value, NotificationMapping_
 		/* Turn on the LED. */
 		RgbLedColorSet(active_notification->color);
 		RgbLedModeSet(active_notification->modes[notification_idx]);
-
-		/* Set the timer to the notification time and transition to the 'Notify off' state. */
-		NotificationTimerRun(active_notification->intervals[notification_idx]);
-		
+	
 		notification_idx++;
-		if(notification_idx > active_notification->length) {
+		if(notification_idx < active_notification->length) {
+			/* Set the timer to the notification time. */
+			NotificationTimerRun(active_notification->intervals[notification_idx]);
+		} else {
 			CurrentState = NOTIFICATION_STATE_DONE;
+			NotificationTimerRun(NOTIFICATION_STATE_TRANSITION_INTERVAL_MS);
 		}
 		break;
 	}
 	case NOTIFICATION_STATE_DONE: {
 		/* Turn off the LED. */
 		RgbLedModeSet(RGB_LED_MODE_OFF);
-	
-		if(SleepCallback != NULL) {
-			SleepCallback(0);
-		}
 		CurrentState = NOTIFICATION_STATE_AWAIT_INPUT;
+		return NOTIFICATION_STATE_DONE;
 		break;
 	}
 	
@@ -121,12 +125,19 @@ static void NotificationTimerCallback(SoftTimer_t timer)
 static NotificationMapping_t *INotificationMappingFromMoistureLevel(MoistureLevel_e level)
 {
 	uint8_t i = 0;
-	uint8_t idx = 0;
+	uint8_t idx = 0xFF;
+	NotificationMapping_t entry;
 	
-	for(; i < NOTIFICATION_COLOR_TABLE_SIZE; i++) {
-		if(NotificationMapping[i].level <= level) {
+	for(; i < NotificationTableSize; i++) {
+		//memcpy_P(&entry, &NotificationMapping[i], sizeof(NotificationMapping_t));
+		memcpy(&entry, &NotificationMapping[i], sizeof(NotificationMapping_t));
+		if(entry.level == level) {
 			idx = i;
+			break;
 		}
+	}
+	if(idx == 0xFF) {
+		return NULL;
 	}
 	
 	return &NotificationMapping[idx];

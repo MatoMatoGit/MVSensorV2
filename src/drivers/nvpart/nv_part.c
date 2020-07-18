@@ -9,6 +9,8 @@
  * The Raw API takes an offset (relative address) argument, which is translated by 
  * the library to a absolute address.
  */
+#include <stdint.h>
+
 #define NV_PART_MAX_PARTS 5
 
 typedef uint8_t NvPartId_t;
@@ -46,6 +48,8 @@ typedef struct {
 }NvPartCfg_t;
 
 NvPartCfg_t nv_parts[NV_PART_MAX] = {
+	{
+	},
 	/**
 	 * Define parts here.
 	 */

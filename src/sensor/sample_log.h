@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-#define SAMPLE_LOG_SIZE 240
+#define SAMPLE_LOG_SIZE 0
 
 #define INVALID_VALUE -1
 

@@ -51,7 +51,6 @@ void MoistureSensorReadBurst(uint8_t n, void (*read_cb)(uint32_t val))
 	for(uint8_t i = 0; i < n; i++) { 
 		PulseCount = 0;
 		ExtIntEnable(MoistInt);
-		//_delay_ms(MOISTURE_CONFIG_MEASURING_TIME_MS);
 		for(volatile uint32_t i = 0; i < 100; i++);
 		ExtIntDisable();
 		read_cb(PulseCount);

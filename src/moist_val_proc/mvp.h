@@ -25,6 +25,8 @@
 
 #include "moisture_level.h"
 
+#include <stdint.h>
+
 #define MVP_STORED_SAMPLES 5
 
 #define MVP_CONSECUTIVE_SAMPLES 5
@@ -35,7 +37,7 @@ int MvpMoistValueIn(int16_t moist_val);
 
 int MvpMoistLevelOut(MoistureLevel_e *moist_lvl);
 
-int MvpThresholdScore(void);
+const char *MoistureLevelToString(MoistureLevel_e moist_level);
 
 
 

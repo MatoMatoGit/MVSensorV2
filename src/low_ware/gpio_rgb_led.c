@@ -5,9 +5,9 @@
 
 #define DDR_RGB_LED		DDRB
 #define PORT_RGB_LED	PORTB
-#define PIN_LED_RED		PINB2
-#define PIN_LED_GREEN	PINB0
-#define PIN_LED_BLUE	PINB1
+#define PIN_LED_RED		PINB1
+#define PIN_LED_GREEN	PINB2
+#define PIN_LED_BLUE	PINB0
 
 void GpioRgbLedInit(void)
 {
